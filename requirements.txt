@@ -1,0 +1,5 @@
+Django>=5.0
+torch
+transformers
+peft
+git+https://github.com/csebuetnlp/normalizer

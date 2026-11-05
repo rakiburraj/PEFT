@@ -1,0 +1,12 @@
+{
+ "labels": [
+  "negative",
+  "neutral",
+  "positive"
+ ],
+ "base_model": "csebuetnlp/banglabert",
+ "max_len": 128,
+ "train_samples": 20000,
+ "test_macro_f1": 0.5792,
+ "test_accuracy": 0.9224
+}

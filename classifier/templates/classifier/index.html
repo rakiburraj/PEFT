@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="bn">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bangla Text Classifier</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1c2430; --muted:#5b6675; --line:#d9dee5; --accent:#1f5fbf; --ok:#1f8a4c; --bad:#c0392b; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14181f; --card:#1c222b; --ink:#e8ecf1; --muted:#9aa5b4; --line:#2e3744; --accent:#6ea3f0; --ok:#4cc27f; --bad:#ef7b6e; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans Bengali",sans-serif; }
+  main { max-width:720px; margin:0 auto; padding:28px 16px 48px; }
+  h1 { margin:0 0 4px; font-size:1.6rem; }
+  .sub { margin:0 0 20px; color:var(--muted); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:18px; }
+  .tabs { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+  .tab { border:1px solid var(--line); background:transparent; color:var(--ink); padding:8px 14px; border-radius:999px; cursor:pointer; font:inherit; }
+  .tab.on { background:var(--accent); border-color:var(--accent); color:#fff; }
+  #hint { margin:4px 0 10px; color:var(--muted); font-size:.95rem; }
+  textarea { width:100%; min-height:140px; resize:vertical; padding:12px; border:1px solid var(--line); border-radius:8px;
+             background:transparent; color:var(--ink); font:inherit; font-size:1.05rem; line-height:1.5; }
+  .row { display:flex; gap:10px; align-items:center; margin-top:12px; flex-wrap:wrap; }
+  button.go { background:var(--accent); color:#fff; border:0; padding:10px 20px; border-radius:8px; font:inherit; cursor:pointer; }
+  button.go[disabled] { opacity:.6; cursor:wait; }
+  button.ghost { background:transparent; color:var(--accent); border:1px solid var(--line); padding:9px 14px; border-radius:8px; font:inherit; cursor:pointer; }
+  #count { margin-left:auto; color:var(--muted); font-size:.85rem; }
+  #out { margin-top:18px; }
+  .label { font-size:1.6rem; font-weight:700; }
+  .conf { color:var(--muted); margin:2px 0 12px; }
+  .bar { display:flex; align-items:center; gap:10px; margin:6px 0; font-size:.92rem; }
+  .bar .name { width:90px; flex:none; }
+  .bar .track { flex:1; height:10px; background:var(--line); border-radius:6px; overflow:hidden; }
+  .bar .fill { height:100%; background:var(--accent); }
+  .bar .pct { width:52px; text-align:right; flex:none; color:var(--muted); }
+  .note { margin-top:10px; color:var(--muted); font-size:.85rem; }
+  .err { color:var(--bad); margin-top:12px; }
+  .warn { margin-top:18px; padding:12px 14px; border-left:4px solid var(--bad); background:var(--card); border-radius:6px; font-size:.88rem; color:var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Bangla Text Classifier</h1>
+  <p class="sub">Research demo: BanglaBERT with a small LoRA adapter per task (under 1% of the parameters are trained).</p>
+
+  <div class="card">
+    {% csrf_token %}
+    <div class="tabs">
+      {% for key, info in tasks.items %}
+      <button type="button" class="tab" data-task="{{ key }}" data-hint="{{ info.hint }}" data-example="{{ info.example }}" data-warning="{{ info.warning }}">{{ info.title }}</button>
+      {% endfor %}
+    </div>
+    <div id="hint"></div>
+    <textarea id="text" maxlength="{{ max_chars }}" placeholder="এখানে বাংলা লেখা দিন..." aria-label="Bangla text"></textarea>
+    <div class="row">
+      <button type="button" class="go" id="go">Classify</button>
+      <button type="button" class="ghost" id="ex">Use example</button>
+      <span id="count">0 / {{ max_chars }}</span>
+    </div>
+    <div id="err" class="err" role="alert"></div>
+    <div id="out" hidden>
+      <div class="label" id="label"></div>
+      <div class="conf" id="conf"></div>
+      <div id="bars"></div>
+      <div class="note" id="trunc" hidden>The text is longer than 128 tokens, so only the beginning was used.</div>
+      <div class="note" id="info"></div>
+    </div>
+  </div>
+
+  <p class="warn" id="warn"></p>
+</main>
+
+<script>
+(function () {
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('.tab'));
+  var ta = document.getElementById('text'), go = document.getElementById('go'), ex = document.getElementById('ex');
+  var hint = document.getElementById('hint'), warn = document.getElementById('warn'), err = document.getElementById('err');
+  var out = document.getElementById('out'), bars = document.getElementById('bars');
+  var token = document.querySelector('[name=csrfmiddlewaretoken]').value;
+  var current = null;
+
+  function select(tab) {
+    current = tab;
+    tabs.forEach(function (t) { t.classList.toggle('on', t === tab); });
+    hint.textContent = tab.dataset.hint;
+    warn.textContent = 'Research demo only. ' + tab.dataset.warning;
+    out.hidden = true; err.textContent = '';
+  }
+  tabs.forEach(function (t) { t.addEventListener('click', function () { select(t); }); });
+  ex.addEventListener('click', function () { ta.value = current.dataset.example; ta.dispatchEvent(new Event('input')); });
+  ta.addEventListener('input', function () { document.getElementById('count').textContent = ta.value.length + ' / ' + ta.maxLength; });
+
+  function show(data) {
+    document.getElementById('label').textContent = data.label;
+    document.getElementById('conf').textContent = 'Confidence: ' + (data.confidence * 100).toFixed(1) + '%';
+    bars.textContent = '';
+    Object.keys(data.probabilities).forEach(function (name) {
+      var p = data.probabilities[name];
+      var row = document.createElement('div'); row.className = 'bar';
+      var n = document.createElement('span'); n.className = 'name'; n.textContent = name;
+      var track = document.createElement('div'); track.className = 'track';
+      var fill = document.createElement('div'); fill.className = 'fill'; fill.style.width = (p * 100).toFixed(1) + '%';
+      track.appendChild(fill);
+      var pct = document.createElement('span'); pct.className = 'pct'; pct.textContent = (p * 100).toFixed(1) + '%';
+      row.appendChild(n); row.appendChild(track); row.appendChild(pct); bars.appendChild(row);
+    });
+    document.getElementById('trunc').hidden = !data.truncated;
+    var mi = data.model_info || {};
+    document.getElementById('info').textContent = mi.test_macro_f1 ? ('Model test macro-F1: ' + mi.test_macro_f1 + ' (trained on ' + mi.train_samples + ' samples)') : '';
+    out.hidden = false;
+  }
+
+  go.addEventListener('click', function () {
+    err.textContent = '';
+    var text = ta.value.trim();
+    if (!text) { err.textContent = 'Please enter some text.'; return; }
+    go.disabled = true; go.textContent = 'Working...';
+    fetch('/api/predict', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': token },
+      body: JSON.stringify({ task: current.dataset.task, text: text })
+    }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
+      .then(function (res) { if (res.ok) { show(res.d); } else { out.hidden = true; err.textContent = res.d.error || 'Something went wrong.'; } })
+      .catch(function () { err.textContent = 'Could not reach the server.'; })
+      .then(function () { go.disabled = false; go.textContent = 'Classify'; });
+  });
+
+  select(tabs[0]);
+})();
+</script>
+</body>
+</html>

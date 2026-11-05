@@ -1,0 +1,11 @@
+{
+ "labels": [
+  "fake",
+  "authentic"
+ ],
+ "base_model": "csebuetnlp/banglabert",
+ "max_len": 128,
+ "train_samples": 20000,
+ "test_macro_f1": 0.8876,
+ "test_accuracy": 0.9902
+}
